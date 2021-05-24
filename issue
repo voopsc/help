@@ -1,0 +1,332 @@
+function ajaxJson(url, data)
+{
+
+  return fetch(url, {
+	   method: "POST",
+     body: data,
+     headers:{'Content-Type': 'application/json'},
+	})
+
+  .then( (response) => {
+          if (response.status !== 200) {
+  			       return Promise.reject();
+          }
+          return response.json()
+  })
+  // .then(i => console.log(i))
+  .catch(() => console.log('ошибка'));
+}
+
+function getToday()
+{
+  let today = new Date();
+  let dd = String(today.getDate()).padStart(2, '0');
+  let mm = String(today.getMonth() + 1).padStart(2, '0'); //January is 0!
+  let yyyy = today.getFullYear();
+
+  // today = dd + '/' + mm + '/' + yyyy;
+  today = yyyy + ',' + mm + ',' + dd;
+
+  return today;
+}
+
+docReady( function() {
+
+
+  function maskPhone()
+  {
+    let elements = document.querySelectorAll('.phone-input input');
+
+    if (elements) {
+      Array.prototype.forEach.call(elements, function(item){
+        IMask(item, {
+          mask: '00 000 00 00',
+        });
+      });
+    }
+  }
+  maskPhone();
+
+  function formatDate(date) {
+  if (typeof date == 'number') {
+    // перевести секунды в миллисекунды и преобразовать к Date
+    date = new Date(date * 1000);
+  } else if (typeof date == 'string') {
+    // строка в стандартном формате автоматически будет разобрана в дату
+    date = new Date(date);
+  } else if (Array.isArray(date)) {
+    date = new Date(date[0], date[1], date[2]);
+  }
+  // преобразования для поддержки полиморфизма завершены,
+  // теперь мы работаем с датой (форматируем её)
+
+  // return date.toLocaleString("ru", {day: '2-digit', month: '2-digit', year: '2-digit'});
+  var day = date.getDate();
+  if (day < 10) day = '0' + day;
+
+  var month = date.getMonth() + 1;
+  if (month < 10) month = '0' + month;
+
+  // взять 2 последние цифры года
+  var year = date.getFullYear();
+  // if (year < 10) year = '0' + year;
+
+  var formattedDate = day + '/' + month + '/' + year;
+
+  return formattedDate;
+}
+
+  function userCalendar() {
+    let titleBox = document.getElementById('calendar-title');
+    let stageTitle = document.getElementById('calendar-stage-title');
+    let stageDescription = document.getElementById('stage-description');
+
+    let eventDates =  ajaxJson('/app/dates', 'main');
+    let paymentDates =  ajaxJson('/app/pay', 'main');
+
+    let baseDat = new Date;
+    let today = formatDate(baseDat.toString('dd.mm.yyyy'));
+
+    let calendarBtn = document.getElementById('gCalendarAdd');
+
+
+    $(".user-calendar").flatpickr({
+      // minDate: "today",
+      locale: "ru",
+      dateFormat: "d/m/Y",
+      inline: true,
+      onChange: function(selectedDates, dateStr, instance) {
+        let typeElem = this.selectedDateElem;
+
+        let makeRequest = ajaxJson('/app/getday', JSON.stringify(dateStr));
+        titleBox.textContent = dateStr;
+
+        makeRequest.then(function(result){
+          stageTitle.textContent = result['stage_title'];
+          stageDescription.textContent = result['stage_description'];
+
+          if (calendarBtn) {
+            if (result['id'] !== undefined) {
+              calendarBtn.setAttribute('data-id', result['id']);
+            } else {
+              calendarBtn.removeAttribute('data-id');
+            }
+          }
+
+        });
+      },
+      onDayCreate: function(dObj, dStr, fp, dayElem){
+        let date = formatDate(dayElem.dateObj);
+
+        if (eventDates) {
+          eventDates.then(function(result){
+            for (const [key, valData] of Object.entries(result)) {
+              if (date === valData) {
+                // console.log(dayElem);
+                // dayElem.setAttribute('data-action', 'event');
+                dayElem.innerHTML += '<span class="event" data-action="event"></span>';
+              }
+            }
+          });
+        }
+
+        if (paymentDates) {
+          paymentDates.then(function(result){
+            for (const [key, valData] of Object.entries(result)) {
+              if (date === valData) {
+                dayElem.setAttribute('data-action', 'pay');
+                dayElem.innerHTML += '<span class="event busy"></span>';
+              }
+            }
+          });
+        }
+      }
+    });
+  }
+  userCalendar();
+
+  function addEventToGCal()
+  {
+    let calendarBtn = document.getElementById('gCalendarAdd');
+
+    if (calendarBtn) {
+      calendarBtn.addEventListener('click', function(){
+        let checkAttr = calendarBtn.hasAttribute('data-id');
+        if (checkAttr == true) {
+          let btnValue = calendarBtn.getAttribute('data-id');
+
+          let makeRequest = ajaxJson('/app/add-gevent', JSON.stringify(btnValue));
+          alert('Подія надіслана до Вашого Гугл-календарю');
+          // $('#gCalendarAdd').on('click', function() {
+            //   alert('Наразі реалізована авторизація та доєднання календарю до сервісу. Функція додавання подій ще знаходиться у розробці');
+            // });
+        } else {
+          alert('Не обрана подія');
+        }
+        });
+    }
+  }
+  addEventToGCal();
+
+
+  function diffDates(day_one, day_two) {
+    let result = (day_one - day_two) / (60 * 60 * 24 * 1000);
+    if (result < 0) {
+      return 0;
+    }
+    return result;
+  };
+  burger('.burger', '.aside-nav');
+
+  function getReadyProcent(fullLength, dayToEnd) {
+    if (fullLength <= 0) {
+      return 100;
+    }
+    let result = (dayToEnd / fullLength) * 100;
+        result = Math.round(result);
+    return 100 - result;
+  }
+
+  function calculateDateDiff()
+  {
+    let container = document.querySelectorAll('.time-progress');
+    let today = getToday();
+        today = new Date(today);
+
+    let normalizeDate = (date) => {
+      let array = date.split('/');
+          arrayReversed = array.reverse();
+          result = arrayReversed.join(",");
+          result = new Date(result);
+
+    return result;
+    }
+
+    Array.prototype.forEach.call(container, function(box){
+      let startElem = box.querySelector("[data-start]");
+          startDate = startElem.getAttribute('data-start');
+          startDate = normalizeDate(startDate);
+
+      let daysBeforeStart = diffDates(startDate, today);
+
+      if (daysBeforeStart > 0) {
+        return false;
+      } else {
+        let startCheckmark = box.querySelector('.mark-start');
+        startCheckmark.classList.add('done');
+      }
+
+      let indicator = box.querySelector('.indicator');
+      let endCheckmark = box.querySelector('.mark-end');
+
+      let endElem = box.querySelector("[data-end]");
+          endDate = endElem.getAttribute('data-end');
+          endDate = normalizeDate(endDate);
+
+      let fullLength = diffDates(endDate, startDate);
+      let daysBeforeEnd = diffDates(endDate, today);
+
+      // console.log(daysBeforeEnd);
+
+      if (daysBeforeEnd <= 0) {
+        let startCheckmark = box.querySelector('.mark-end');
+        startCheckmark.classList.add('done');
+      }
+
+      let progress = getReadyProcent(fullLength, daysBeforeEnd);
+      // progress = progress.toString();
+
+      // indicator.style.minWidth = progress + 'px';
+      // indicator.style.minWidth = '100px';
+      progress = String(progress);
+      indicator.setAttribute('data-progress', progress);
+      // console.log(progress);
+    });
+  }
+  calculateDateDiff();
+
+  // function setProgress()
+  // {
+  //   let elements = document.querySelectorAll("[data-progress]");
+  //
+  //   if (elements) {
+  //     Array.prototype.forEach.call(elements, function(item){
+  //       let itemVal = item.getAttribute('data-progress');
+  //       // item.style.minWidth = itemVal + 'px';
+  //       // itemVal = String(itemVal) + "\%";
+  //       // item.style.minWidth = itemVal;
+  //       // item.style.Width = itemVal;
+  //       // item.style.fle = itemVal;
+  //       item.setAttribute("style", "min-width: " + itemVal + ";");
+  //       console.log(itemVal);
+  //     });
+  //   }
+  // }
+
+  // function setProgress()
+  // {
+  //   $("[data-progress]").each(function(index){
+  //     let itemWidth = $(this).data('progress');
+  //     $(this).width(itemWidth);
+  //   });
+  // }
+
+  function setProgress()
+  {
+    let elements = document.querySelectorAll("[data-progress]");
+
+    if (elements) {
+      elements.forEach( item => {
+        let itemVal = item.getAttribute('data-progress');
+        item.style.cssText = 'min-width: red; font-size: 40px;';
+        item.setAttribute("style", `min-width: ${itemVal}%;`);
+        console.log(itemVal);
+      });
+    }
+  }
+  setProgress();
+
+  // setProgress();
+
+  function currentStageScrolled()
+  {
+    let element = document.querySelector('.current');
+
+    if (element) {
+      let elementBox = element.parentElement;
+      let offsetLeftVal = element.offsetLeft;
+      offsetLeftVal -= 100
+
+    }
+  }
+
+  function projectSlider()
+  {
+    let thumbSlider = document.querySelector('.project-slider-thumbs');
+    let sliderElement = document.querySelector('.project-swiper');
+
+    if (thumbSlider) {
+      let swiper = new Swiper(thumbSlider, {
+        spaceBetween: 10,
+        slidesPerView: 4,
+        freeMode: true,
+        watchSlidesVisibility: true,
+        watchSlidesProgress: true,
+        // loop: true,
+      });
+      let swiper2 = new Swiper(sliderElement, {
+        spaceBetween: 10,
+        // navigation: {
+        //   nextEl: ".swiper-button-next",
+        //   prevEl: ".swiper-button-prev",
+        // },
+        thumbs: {
+          swiper: swiper,
+        },
+      });
+    }
+
+
+  }
+  projectSlider();
+});
